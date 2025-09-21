@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+sqlalchemy
+pydantic-settings
+python-dotenv
+httpx
+multimind-sdk
+chromadb
+pypdf

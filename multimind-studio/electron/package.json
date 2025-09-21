@@ -1,0 +1,18 @@
+{
+  "name": "multimind-studio-electron",
+  "version": "0.1.0",
+  "main": "main.ts",
+  "private": true,
+  "scripts": {
+    "start": "cross-env NODE_ENV=development electron -r ts-node/register ./main.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "electron": "^28.1.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.0"
+  }
+}
