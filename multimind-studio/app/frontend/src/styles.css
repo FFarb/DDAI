@@ -26,6 +26,11 @@ html,
   box-sizing: border-box;
 }
 
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+}
+
 .sidebar a {
   color: #61dafb;
   text-decoration: none;

@@ -3,6 +3,7 @@ import ChatPage from './pages/ChatPage';
 import RagPage from './pages/RagPage';
 import ScriptsPage from './pages/ScriptsPage';
 import SettingsPage from './pages/SettingsPage';
+import TradingPage from './pages/TradingPage';
 import Sidebar from './components/Sidebar';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
           <Route path="/rag" element={<RagPage />} />
           <Route path="/scripts" element={<ScriptsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/trading" element={<TradingPage />} />
         </Routes>
       </main>
     </div>

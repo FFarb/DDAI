@@ -8,3 +8,6 @@ httpx
 multimind-sdk
 chromadb
 pypdf
+requests
+pandas
+pandas_ta

@@ -8,13 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import select
 
-from .api import chat, rag, scripts, settings, ws
+from .api import chat, rag, scripts, settings, trading, ws
 from .core.db import Database
 from .core.jobs import JobQueue
 from .core.models import AppConfig, ScriptRun, ensure_directories
 from .core.multimind_service import MultiMindService
 from .core.rag_service import RagService
 from .core.script_runner import ScriptRunner
+from .core.trading_service import TradingService
 
 app = FastAPI(title="MultiMind Studio API")
 
@@ -24,6 +25,7 @@ database = Database(config.database_url)
 database.init_db()
 rag_service = RagService(config.vectorstore_path)
 multimind_service = MultiMindService(config)
+trading_service = TradingService()
 job_queue = JobQueue()
 
 
@@ -64,6 +66,7 @@ async def startup_event() -> None:
     app.state.rag = rag_service
     app.state.runner = script_runner
     app.state.multimind = multimind_service
+    app.state.trading_service = trading_service
     app.state.jobs = job_queue
 
 
@@ -81,4 +84,5 @@ app.include_router(chat.router)
 app.include_router(rag.router)
 app.include_router(scripts.router)
 app.include_router(settings.router)
+app.include_router(trading.router)
 app.include_router(ws.router)
