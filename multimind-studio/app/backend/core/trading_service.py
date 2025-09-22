@@ -1,9 +1,15 @@
 import asyncio
+import logging
 from typing import Dict, List
 
 import pandas as pd
 import pandas_ta as ta
 import requests
+from fastapi import HTTPException
+from requests.exceptions import RequestException
+
+
+logger = logging.getLogger(__name__)
 
 
 class TradingService:
@@ -18,30 +24,124 @@ class TradingService:
         endpoint = f"{self.base_url}/v5/market/kline"
         params = {"category": "linear", "symbol": symbol, "interval": interval, "limit": limit}
 
+        response = None
+
         try:
             try:
                 response = await asyncio.to_thread(
                     requests.get, endpoint, params=params, timeout=10
                 )
-            except AttributeError:
+            except AttributeError:  # pragma: no cover - fallback for Python < 3.9
                 loop = asyncio.get_event_loop()
-                response = await loop.run_in_executor(
-                    None, lambda: requests.get(endpoint, params=params, timeout=10)
-                )
-        except Exception as exc:  # pragma: no cover - network errors not easily testable
-            raise Exception(f"Failed to connect to Bybit API: {exc}") from exc
 
-        if response.status_code != 200:
-            raise Exception(
-                f"Failed to fetch market data: {response.status_code} {response.text}"
+                def _perform_request() -> requests.Response:
+                    return requests.get(endpoint, params=params, timeout=10)
+
+                response = await loop.run_in_executor(None, _perform_request)
+        except RequestException as exc:
+            logger.error(
+                "Request to Bybit API failed for symbol %s with interval %s: %s",
+                symbol,
+                interval,
+                exc,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to communicate with the external Bybit API.",
+            ) from exc
+        except Exception as exc:  # pragma: no cover - safety net for unexpected errors
+            logger.exception(
+                "Unexpected error when requesting Bybit market data for %s (interval %s)",
+                symbol,
+                interval,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to communicate with the external Bybit API.",
+            ) from exc
+
+        if response is None:  # pragma: no cover - defensive
+            logger.error("No response object returned when requesting Bybit data")
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to communicate with the external Bybit API.",
             )
 
-        payload = response.json()
-        if payload.get("retCode") != 0:
-            raise Exception(payload.get("retMsg", "Unknown error from Bybit API"))
+        if response.status_code != 200:
+            logger.error(
+                "Bybit API returned non-200 status %s for symbol %s: %s",
+                response.status_code,
+                symbol,
+                response.text,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to communicate with the external Bybit API.",
+            )
 
-        result = payload.get("result", {})
-        candles_raw = result.get("list", []) or []
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            logger.error(
+                "Failed to decode JSON from Bybit response for symbol %s: %s",
+                symbol,
+                response.text,
+                exc_info=True,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to communicate with the external Bybit API.",
+            ) from exc
+
+        if not isinstance(payload, dict):
+            logger.error("Unexpected payload type from Bybit: %r", payload)
+            raise HTTPException(
+                status_code=500,
+                detail="Unexpected response format from Bybit API.",
+            )
+
+        missing_keys = {"retCode", "retMsg", "result"} - payload.keys()
+        if missing_keys:
+            logger.error(
+                "Missing keys %s in Bybit response for %s: %s",
+                ", ".join(sorted(missing_keys)),
+                symbol,
+                payload,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Unexpected response format from Bybit API.",
+            )
+
+        if payload.get("retCode") != 0:
+            logger.error(
+                "Bybit API returned error for %s: retCode=%s retMsg=%s payload=%s",
+                symbol,
+                payload.get("retCode"),
+                payload.get("retMsg"),
+                payload,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=payload.get("retMsg", "Unknown error from Bybit API"),
+            )
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            logger.error("Unexpected 'result' structure in Bybit response: %s", result)
+            raise HTTPException(
+                status_code=500,
+                detail="Unexpected response format from Bybit API.",
+            )
+
+        candles_raw = result.get("list") or []
+        if not isinstance(candles_raw, list):
+            logger.error("Bybit 'list' payload is not a list: %r", candles_raw)
+            raise HTTPException(
+                status_code=500,
+                detail="Unexpected response format from Bybit API.",
+            )
 
         candles: List[Dict] = []
         for entry in candles_raw:
@@ -54,8 +154,12 @@ class TradingService:
                 low_price = float(entry[3])
                 close_price = float(entry[4])
                 volume = float(entry[5]) if len(entry) > 5 else 0.0
-            except (ValueError, TypeError, IndexError) as exc:
-                raise Exception(f"Unexpected data format received from Bybit: {entry}") from exc
+            except (ValueError, TypeError, IndexError, KeyError) as exc:
+                logger.error("Failed to parse candle entry from Bybit: %s", entry, exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to parse candlestick data from Bybit.",
+                ) from exc
 
             candles.append(
                 {

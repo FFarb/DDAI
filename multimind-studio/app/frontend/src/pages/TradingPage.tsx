@@ -42,12 +42,15 @@ const TradingPage = () => {
     setSymbol(normalizedSymbol);
     setLoading(true);
     setError(null);
+    let response: Response | undefined;
+    let responseOk = false;
     try {
-      const response = await fetch(
+      response = await fetch(
         `http://localhost:8000/api/trading/market-data/${normalizedSymbol}?interval=60&limit=200`,
       );
-      if (!response.ok) {
-        throw new Error(`Failed to fetch data: ${response.status} ${response.statusText}`);
+      responseOk = response.ok;
+      if (!responseOk) {
+        throw new Error('Failed to fetch market data');
       }
       const payload = await response.json();
       if (Array.isArray(payload)) {
@@ -76,7 +79,26 @@ const TradingPage = () => {
         setData([]);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error fetching data');
+      console.error('Failed to fetch trading data', err);
+      if (response && !responseOk) {
+        try {
+          const errorPayload = (await response.json()) as { detail?: unknown };
+          const detail =
+            typeof errorPayload?.detail === 'string'
+              ? errorPayload.detail
+              : errorPayload?.detail
+              ? JSON.stringify(errorPayload.detail)
+              : `Request failed with status ${response.status}`;
+          setError(detail);
+        } catch (parseError) {
+          console.error('Unable to parse error response from backend', parseError);
+          setError(`Request failed with status ${response.status}`);
+        }
+      } else if (!response) {
+        setError('Cannot connect to the server. Is the backend running?');
+      } else {
+        setError('An unexpected error occurred while processing market data.');
+      }
       setData([]);
     } finally {
       setLoading(false);
